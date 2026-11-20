@@ -110,7 +110,6 @@
         </label>
       </div>
 
-      <!-- Area Viewport Kamera -->
       <div id="cameraWrapper" class="hidden relative rounded-xl overflow-hidden bg-black border border-slate-700">
         <video id="videoFeed" playsinline autoplay muted class="w-full max-h-[360px] object-contain"></video>
         <div class="absolute bottom-3 inset-x-3 flex justify-center">
@@ -127,7 +126,6 @@
 
     <!-- 3. HASIL IDENTITAS, VISUALISASI GRID & KALIBRASI -->
     <section class="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-4">
-      <!-- Skor Utama -->
       <div class="grid grid-cols-4 gap-2 text-center">
         <div class="bg-indigo-950/60 border border-indigo-500/30 rounded-xl p-2.5">
           <div class="text-[10px] text-indigo-300 font-semibold uppercase">Nilai Akhir</div>
@@ -147,7 +145,6 @@
         </div>
       </div>
 
-      <!-- Identitas Siswa -->
       <div class="space-y-2.5">
         <div class="grid grid-cols-2 gap-2.5">
           <div>
@@ -179,53 +176,52 @@
           <canvas id="warpedCanvas" width="750" height="540" class="max-w-full h-auto rounded-lg"></canvas>
         </div>
 
-        <!-- PANEL KALIBRASI LANGSUNG DI BAWAH GAMBAR -->
+        <!-- PANEL KALIBRASI PRESISI 3 TABEL -->
         <div class="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-2.5">
           <div class="flex items-center justify-between">
-            <span class="text-[11px] font-bold text-amber-300">🎯 Luruskan Lingkaran ke Bulatan A-E:</span>
-            <button type="button" onclick="resetCalibration()" class="text-[10px] text-slate-400 hover:text-white underline">Reset Default</button>
+            <span class="text-[11px] font-bold text-amber-300">🎯 Kalibrasi Presisi (Terkunci 3 Tabel):</span>
+            <button type="button" onclick="resetCalibration()" class="text-[10px] text-slate-400 hover:text-white underline">Reset Presisi</button>
           </div>
           <div class="grid grid-cols-2 gap-x-4 gap-y-2 text-[11px]">
             <div>
               <div class="flex justify-between text-slate-400">
                 <span>Batas Atas (No.1)</span>
-                <span id="lblTop" class="font-mono text-white">18.0%</span>
+                <span id="lblTop" class="font-mono text-white">18.5%</span>
               </div>
-              <input type="range" id="calTop" min="5" max="30" step="0.5" value="18.0" oninput="onCalibrationChange()" class="w-full accent-amber-400" />
+              <input type="range" id="calTop" min="5" max="30" step="0.5" value="18.5" oninput="onCalibrationChange()" class="w-full accent-amber-400" />
             </div>
             <div>
               <div class="flex justify-between text-slate-400">
                 <span>Batas Bawah (Akhir)</span>
-                <span id="lblBottom" class="font-mono text-white">86.0%</span>
+                <span id="lblBottom" class="font-mono text-white">88.5%</span>
               </div>
-              <input type="range" id="calBottom" min="70" max="96" step="0.5" value="86.0" oninput="onCalibrationChange()" class="w-full accent-amber-400" />
+              <input type="range" id="calBottom" min="70" max="96" step="0.5" value="88.5" oninput="onCalibrationChange()" class="w-full accent-amber-400" />
             </div>
             <div>
               <div class="flex justify-between text-slate-400">
                 <span>Mulai Huruf A</span>
-                <span id="lblOptStart" class="font-mono text-white">34.0%</span>
+                <span id="lblOptStart" class="font-mono text-white">33.5%</span>
               </div>
-              <input type="range" id="calOptStart" min="20" max="50" step="0.5" value="34.0" oninput="onCalibrationChange()" class="w-full accent-amber-400" />
+              <input type="range" id="calOptStart" min="20" max="45" step="0.5" value="33.5" oninput="onCalibrationChange()" class="w-full accent-amber-400" />
             </div>
             <div>
               <div class="flex justify-between text-slate-400">
                 <span>Akhir Huruf E</span>
-                <span id="lblOptEnd" class="font-mono text-white">91.0%</span>
+                <span id="lblOptEnd" class="font-mono text-white">89.5%</span>
               </div>
-              <input type="range" id="calOptEnd" min="75" max="99" step="0.5" value="91.0" oninput="onCalibrationChange()" class="w-full accent-amber-400" />
+              <input type="range" id="calOptEnd" min="75" max="98" step="0.5" value="89.5" oninput="onCalibrationChange()" class="w-full accent-amber-400" />
             </div>
           </div>
           <div class="pt-1 border-t border-slate-800/80">
             <div class="flex justify-between text-[11px] text-slate-400">
               <span>Sensitivitas Hitam (Tebal Pensil/Pulpen)</span>
-              <span id="lblThresh" class="font-mono text-emerald-400">24%</span>
+              <span id="lblThresh" class="font-mono text-emerald-400">42%</span>
             </div>
-            <input type="range" id="calThresh" min="12" max="55" step="1" value="24" oninput="onCalibrationChange()" class="w-full accent-emerald-500" />
+            <input type="range" id="calThresh" min="15" max="65" step="1" value="42" oninput="onCalibrationChange()" class="w-full accent-emerald-500" />
           </div>
         </div>
       </div>
 
-      <!-- Tombol Simpan -->
       <button type="button" onclick="submitToGoogleSheets()" id="btnSaveSheets" class="w-full py-3.5 px-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm rounded-xl shadow-lg transition flex items-center justify-center gap-2">
         <span>✈️</span> <span>Simpan Nilai ke Google Sheets</span>
       </button>
@@ -279,13 +275,13 @@
         calOptEnd: document.getElementById('calOptEnd').value,
         calThresh: document.getElementById('calThresh').value
       };
-      localStorage.setItem('omr_scanner_cfg_v3', JSON.stringify(cfg));
+      localStorage.setItem('omr_scanner_cfg_v4', JSON.stringify(cfg));
       handleKeyInput();
       initEmptyAnswers();
     }
 
     function loadConfig() {
-      const raw = localStorage.getItem('omr_scanner_cfg_v3');
+      const raw = localStorage.getItem('omr_scanner_cfg_v4');
       if (raw) {
         try {
           const cfg = JSON.parse(raw);
@@ -323,11 +319,11 @@
     }
 
     function resetCalibration() {
-      document.getElementById('calTop').value = 18.0;
-      document.getElementById('calBottom').value = 86.0;
-      document.getElementById('calOptStart').value = 34.0;
-      document.getElementById('calOptEnd').value = 91.0;
-      document.getElementById('calThresh').value = 24;
+      document.getElementById('calTop').value = 18.5;
+      document.getElementById('calBottom').value = 88.5;
+      document.getElementById('calOptStart').value = 33.5;
+      document.getElementById('calOptEnd').value = 89.5;
+      document.getElementById('calThresh').value = 42;
       onCalibrationChange();
     }
 
@@ -444,7 +440,6 @@
 
       const banner = document.getElementById('scanStatusBanner');
 
-      // 1. Baca QR Code di seluruh gambar terlebih dahulu
       if (typeof jsQR !== 'undefined') {
         const ctx = sourceCanvas.getContext('2d');
         const imgData = ctx.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height);
@@ -457,7 +452,6 @@
         }
       }
 
-      // 2. Deteksi 4 Fiducial Markers menggunakan OpenCV
       let src = cv.imread(sourceCanvas);
       let gray = new cv.Mat();
       let blurred = new cv.Mat();
@@ -503,7 +497,6 @@
           return;
         }
 
-        // Ambil 4 titik ekstrem sudut
         const tl = candidates.reduce((best, c) => (c.cx + c.cy < best.cx + best.cy ? c : best), candidates[0]);
         const br = candidates.reduce((best, c) => (c.cx + c.cy > best.cx + best.cy ? c : best), candidates[0]);
         const tr = candidates.reduce((best, c) => (c.cx - c.cy > best.cx - best.cy ? c : best), candidates[0]);
@@ -517,7 +510,6 @@
           return;
         }
 
-        // 3. Perspective Transform ke kanvas lurus 750 x 540
         const warpW = 750;
         const warpH = 540;
         const srcTri = cv.matFromArray(4, 1, cv.CV_32FC2, [
@@ -545,7 +537,7 @@
         warped.delete();
 
         banner.className = "text-center text-xs py-2 px-3 rounded-xl bg-emerald-950/60 border border-emerald-500/40 text-emerald-300";
-        banner.textContent = "✅ LJK terdeteksi! Gunakan penggeser di bawah gambar jika lingkaran kuning perlu diluruskan.";
+        banner.textContent = "✅ LJK terdeteksi presisi untuk seluruh tabel!";
 
       } finally {
         src.delete();
@@ -563,13 +555,12 @@
       const letters = optionCount === 4 ? ['A', 'B', 'C', 'D'] : ['A', 'B', 'C', 'D', 'E'];
       const answerKey = document.getElementById('answerKeyInput').value.toUpperCase();
 
-      const topPct = (parseFloat(document.getElementById('calTop').value) || 18.0) / 100;
-      const bottomPct = (parseFloat(document.getElementById('calBottom').value) || 86.0) / 100;
-      const optStartPct = (parseFloat(document.getElementById('calOptStart').value) || 34.0) / 100;
-      const optEndPct = (parseFloat(document.getElementById('calOptEnd').value) || 91.0) / 100;
-      const darkThreshold = (parseFloat(document.getElementById('calThresh').value) || 24) / 100;
+      const topPct = (parseFloat(document.getElementById('calTop').value) || 18.5) / 100;
+      const bottomPct = (parseFloat(document.getElementById('calBottom').value) || 88.5) / 100;
+      const optStartPct = (parseFloat(document.getElementById('calOptStart').value) || 33.5) / 100;
+      const optEndPct = (parseFloat(document.getElementById('calOptEnd').value) || 89.5) / 100;
+      const darkThreshold = (parseFloat(document.getElementById('calThresh').value) || 42) / 100;
 
-      // Gunakan Otsu Global Thresholding pada gambar lurus agar kehitaman pensil/pulpen lebih pekat dan kontras
       let wGray = new cv.Mat();
       let wBlur = new cv.Mat();
       let wBin = new cv.Mat();
@@ -591,8 +582,9 @@
       const gridBottom = H * bottomPct;
       const rowStep = (gridBottom - gridTop) / Math.max(perCol - 1, 1);
 
-      const outerPadX = W * 0.028;
-      const colGap = W * 0.018;
+      // Geometri 100% sinkron dengan CSS index.html v2 (px-3 + gap-3)
+      const outerPadX = W * 0.016;
+      const colGap = W * 0.017;
       const usableW = W - (outerPadX * 2) - (colGap * (colCount - 1));
       const colW = usableW / colCount;
 
@@ -617,7 +609,6 @@
 
           let darkPixels = 0;
           let totalPixels = 0;
-          // Hitung bagian dalam lingkaran (radius * 0.72) supaya garis tepi lingkaran tidak ikut terhitung sebagai isi
           const rInner = Math.max(3, Math.floor(radius * 0.72));
           const x0 = Math.max(0, Math.floor(cx - rInner));
           const x1 = Math.min(W - 1, Math.ceil(cx + rInner));
@@ -644,7 +635,7 @@
         const sorted = [...densities].sort((a, b) => b.ratio - a.ratio);
         let chosen = '';
         if (sorted[0].ratio >= darkThreshold) {
-          if (sorted.length === 1 || (sorted[0].ratio - sorted[1].ratio) >= 0.08 || sorted[0].ratio > 0.50) {
+          if (sorted.length === 1 || (sorted[0].ratio - sorted[1].ratio) >= 0.08 || sorted[0].ratio > 0.55) {
             chosen = sorted[0].letter;
           }
         }
