@@ -1,0 +1,1289 @@
+<!DOCTYPE html>
+<html lang="id" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>OMR Scanner Pro - Koreksi LJK Otomatis</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Inter & Roboto Mono -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Roboto+Mono:wght@500;700&display=swap" rel="stylesheet">
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- jsQR Library untuk membaca QR Code Identitas Siswa -->
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+    <!-- OpenCV.js (Computer Vision di Browser) -->
+    <script async src="https://docs.opencv.org/4.8.0/opencv.js" onload="onOpenCvReady()" onerror="onOpenCvError()"></script>
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #090d16;
+            color: #f8fafc;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .font-mono-omr {
+            font-family: 'Roboto Mono', monospace;
+        }
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0f172a;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 9999px;
+        }
+        /* Animasi Garis Scan Laser */
+        @keyframes scanLaser {
+            0% { top: 8%; opacity: 0.4; }
+            50% { top: 88%; opacity: 1; }
+            100% { top: 8%; opacity: 0.4; }
+        }
+        .scanner-laser {
+            position: absolute;
+            left: 6%;
+            right: 6%;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, #10b981, #34d399, #10b981, transparent);
+            box-shadow: 0 0 12px #10b981;
+            animation: scanLaser 2.6s ease-in-out infinite;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col pb-16">
+
+    <!-- Toast Notification (Pengganti alert) -->
+    <div id="toast-container" class="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 w-[92%] max-w-md pointer-events-none transition-all duration-300 opacity-0 translate-y-6">
+        <div id="toast-card" class="bg-slate-900/95 backdrop-blur border border-slate-700 text-white px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-3 text-sm font-medium">
+            <span id="toast-icon" class="text-emerald-400 shrink-0"></span>
+            <span id="toast-text" class="flex-1 leading-snug">Siap memindai LJK</span>
+        </div>
+    </div>
+
+    <!-- HEADER & STATUS ENGINE -->
+    <header class="sticky top-0 z-40 bg-slate-950/90 backdrop-blur-md border-b border-slate-800/80 px-4 py-3">
+        <div class="max-w-5xl mx-auto flex items-center justify-between gap-2">
+            <div class="flex items-center gap-2.5">
+                <div class="w-9 h-9 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
+                    <i data-lucide="scan-line" class="w-5 h-5"></i>
+                </div>
+                <div>
+                    <h1 class="font-bold text-sm sm:text-base tracking-tight text-white leading-tight">OMR Scanner Pro</h1>
+                    <p class="text-[11px] text-slate-400">Koreksi LJK & Sinkronisasi Google Sheets</p>
+                </div>
+            </div>
+
+            <!-- Status Badges -->
+            <div class="flex items-center gap-1.5 sm:gap-2">
+                <span id="badge-opencv" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                    <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping"></span>
+                    <span>OpenCV Loading...</span>
+                </span>
+                <span id="badge-jsqr" class="hidden sm:inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                    <i data-lucide="qr-code" class="w-3 h-3"></i>
+                    <span>jsQR Siap</span>
+                </span>
+            </div>
+        </div>
+    </header>
+
+    <!-- MAIN CONTENT -->
+    <main class="flex-1 max-w-5xl w-full mx-auto px-3 sm:px-4 pt-4 space-y-4">
+
+        <!-- 1. PANEL KONFIGURASI UJIAN & KUNCI JAWABAN (Collapsible) -->
+        <section class="bg-slate-900/90 border border-slate-800 rounded-2xl overflow-hidden shadow-lg">
+            <button type="button" onclick="toggleConfigPanel()" class="w-full px-4 py-3.5 flex items-center justify-between text-left hover:bg-slate-800/40 transition cursor-pointer">
+                <div class="flex items-center gap-2.5">
+                    <div class="w-8 h-8 rounded-lg bg-indigo-500/15 text-indigo-400 flex items-center justify-center">
+                        <i data-lucide="sliders-horizontal" class="w-4 h-4"></i>
+                    </div>
+                    <div>
+                        <h2 class="font-bold text-sm text-white">Konfigurasi Ujian, Kunci & API Sheets</h2>
+                        <p id="config-summary-text" class="text-[11px] text-slate-400 font-mono-omr">35 Soal • 5 Opsi (A-E) • Kunci: 35/35</p>
+                    </div>
+                </div>
+                <i id="config-chevron" data-lucide="chevron-up" class="w-5 h-5 text-slate-400 transition-transform duration-200"></i>
+            </button>
+
+            <div id="config-panel-body" class="px-4 pb-4 pt-1 border-t border-slate-800/80 space-y-4">
+                <!-- Baris 1: Google Apps Script URL + Tes Koneksi -->
+                <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-3 space-y-2">
+                    <div class="flex items-center justify-between">
+                        <label class="text-xs font-semibold text-emerald-400 flex items-center gap-1.5">
+                            <i data-lucide="database" class="w-3.5 h-3.5"></i>
+                            <span>URL Web App Google Apps Script</span>
+                        </label>
+                        <span id="api-status-pill" class="text-[10px] font-mono-omr px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                            URL Tertanam
+                        </span>
+                    </div>
+                    <div class="flex flex-col sm:flex-row gap-2">
+                        <input type="url" id="cfg-script-url"
+                            value="https://script.google.com/macros/s/AKfycby0Ktju78R5J04TykZq06Qg4iw5RVU0RM4ZWkH9sVcNWX8S0Vo7LuGGsf76zmatvuWBbg/exec"
+                            onchange="saveConfig()"
+                            class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs font-mono-omr text-slate-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none"
+                            placeholder="https://script.google.com/macros/s/.../exec">
+                        <button type="button" onclick="testApiConnection()" id="btn-test-api"
+                            class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-[0.98] text-xs font-semibold text-white border border-slate-700 flex items-center justify-center gap-1.5 shrink-0 transition cursor-pointer">
+                            <i data-lucide="wifi" class="w-3.5 h-3.5 text-emerald-400"></i>
+                            <span>Tes Koneksi API</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Baris 2: Mapel, Kelas, Jumlah Soal, Jumlah Opsi -->
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div>
+                        <label class="block text-[11px] font-semibold text-slate-400 mb-1">Mata Pelajaran</label>
+                        <input type="text" id="cfg-mapel" value="Informatika" oninput="saveConfig()"
+                            class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs font-semibold text-white focus:border-emerald-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-[11px] font-semibold text-slate-400 mb-1">Kelas Default</label>
+                        <input type="text" id="cfg-kelas" value="X-A" oninput="saveConfig()"
+                            class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs font-semibold text-white focus:border-emerald-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-[11px] font-semibold text-slate-400 mb-1">Jumlah Soal (10-60)</label>
+                        <input type="number" id="cfg-total-soal" min="10" max="60" value="35" oninput="onQuestionCountChange()"
+                            class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs font-mono-omr font-bold text-emerald-400 focus:border-emerald-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-[11px] font-semibold text-slate-400 mb-1">Jumlah Opsi</label>
+                        <select id="cfg-opsi" onchange="onOptionCountChange()"
+                            class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs font-semibold text-white focus:border-emerald-500 outline-none">
+                            <option value="4">4 Opsi (A - D)</option>
+                            <option value="5" selected>5 Opsi (A - E)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Baris 3: Kunci Jawaban -->
+                <div class="space-y-1.5">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <label class="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                            <i data-lucide="key-round" class="w-3.5 h-3.5 text-amber-400"></i>
+                            <span>Kunci Jawaban (Ketik berurutan tanpa spasi)</span>
+                        </label>
+                        <div class="flex items-center gap-2">
+                            <span id="key-counter-badge" class="font-mono-omr text-[11px] font-bold px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                                35 / 35 Huruf
+                            </span>
+                            <button type="button" onclick="fillSampleKey()" class="text-[11px] text-indigo-400 hover:text-indigo-300 underline cursor-pointer">
+                                Isi Contoh Kunci
+                            </button>
+                        </div>
+                    </div>
+                    <textarea id="cfg-kunci" rows="2" oninput="onAnswerKeyInput()"
+                        class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs sm:text-sm font-mono-omr font-bold tracking-[0.18em] text-amber-300 uppercase focus:border-emerald-500 outline-none"
+                        placeholder="Contoh: ABCDEABCDE...">ABCDEABCDEABCDEABCDEABCDEABCDEABCDE</textarea>
+                </div>
+
+                <!-- Baris 4: Kalibrasi Sensitivitas & Skor Maksimal -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                    <div class="bg-slate-950/60 border border-slate-800 rounded-xl p-2.5">
+                        <div class="flex justify-between text-[11px] mb-1">
+                            <span class="text-slate-400 font-medium">Sensitivitas Hitam Arsiran</span>
+                            <span id="threshold-val-label" class="font-mono-omr font-bold text-emerald-400">0.42 (Normal)</span>
+                        </div>
+                        <input type="range" id="cfg-threshold" min="0.25" max="0.65" step="0.01" value="0.42" oninput="onThresholdChange()"
+                            class="w-full accent-emerald-500 cursor-pointer">
+                    </div>
+                    <div class="bg-slate-950/60 border border-slate-800 rounded-xl p-2.5 flex items-center justify-between gap-3">
+                        <div>
+                            <div class="text-[11px] text-slate-400 font-medium">Skala Nilai Maksimal</div>
+                            <div class="text-[10px] text-slate-500">Otomatis hitung skor proporsional</div>
+                        </div>
+                        <input type="number" id="cfg-max-score" value="100" min="10" max="1000" oninput="saveConfig()"
+                            class="w-20 bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-right font-mono-omr text-xs font-bold text-white outline-none">
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 2. VIEWPORT SCANNER (KAMERA & UPLOAD FOTO) -->
+        <section class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+            <!-- Kolom Kiri: Kamera Live / Foto Input -->
+            <div class="lg:col-span-7 bg-slate-900 border border-slate-800 rounded-2xl p-3.5 flex flex-col gap-3 shadow-lg">
+                <!-- Mode Switcher & Auto Scan -->
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                    <div class="flex items-center gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800">
+                        <button type="button" id="btn-start-cam" onclick="startCamera()"
+                            class="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 text-white flex items-center gap-1.5 shadow-sm transition cursor-pointer">
+                            <i data-lucide="camera" class="w-3.5 h-3.5"></i>
+                            <span>Kamera HP</span>
+                        </button>
+                        <label for="file-upload-ljk"
+                            class="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 flex items-center gap-1.5 transition cursor-pointer">
+                            <i data-lucide="image-plus" class="w-3.5 h-3.5 text-sky-400"></i>
+                            <span>Upload / Foto LJK</span>
+                        </label>
+                        <input type="file" id="file-upload-ljk" accept="image/*" class="hidden" onchange="handleImageUpload(event)">
+                    </div>
+
+                    <!-- Toggle Auto-Scan -->
+                    <label class="inline-flex items-center gap-2 text-xs font-semibold text-slate-300 cursor-pointer select-none bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800">
+                        <input type="checkbox" id="toggle-autoscan" class="accent-emerald-500 w-4 h-4 rounded cursor-pointer">
+                        <span>Auto-Scan</span>
+                    </label>
+                </div>
+
+                <!-- Layar Preview Kamera / Overlay -->
+                <div class="relative w-full aspect-[3/4] sm:aspect-[4/3] bg-slate-950 rounded-xl overflow-hidden border border-slate-800 flex items-center justify-center">
+                    <video id="video-feed" playsinline muted class="w-full h-full object-cover hidden"></video>
+                    <canvas id="canvas-overlay" class="w-full h-full object-contain"></canvas>
+                    <div id="scanner-laser-line" class="scanner-laser hidden"></div>
+
+                    <!-- Placeholder Awal sebelum kamera/foto aktif -->
+                    <div id="viewport-placeholder" class="text-center p-6 space-y-3 max-w-xs">
+                        <div class="w-14 h-14 rounded-2xl bg-slate-900 border border-slate-800 mx-auto flex items-center justify-center text-emerald-400">
+                            <i data-lucide="focus" class="w-7 h-7"></i>
+                        </div>
+                        <div class="space-y-1">
+                            <p class="text-sm font-bold text-white">Arahkan ke Lembar Jawaban</p>
+                            <p class="text-xs text-slate-400 leading-relaxed">
+                                Pastikan <strong>4 kotak hitam sudut</strong> area jawaban terlihat jelas di dalam layar kamera atau unggah foto LJK.
+                            </p>
+                        </div>
+                        <div class="pt-1 flex justify-center gap-2">
+                            <button type="button" onclick="startCamera()" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white flex items-center gap-1.5 cursor-pointer">
+                                <i data-lucide="video" class="w-4 h-4"></i>
+                                <span>Buka Kamera</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Badge Status Deteksi 4 Sudut -->
+                    <div id="marker-lock-badge" class="hidden absolute top-3 left-3 px-3 py-1 rounded-full text-[11px] font-bold bg-slate-950/85 backdrop-blur border border-slate-700 text-slate-300 flex items-center gap-1.5">
+                        <span id="marker-dot" class="w-2 h-2 rounded-full bg-amber-400"></span>
+                        <span id="marker-status-text">Mencari 4 Kotak Sudut...</span>
+                    </div>
+                </div>
+
+                <!-- Tombol Jepret & Nilai -->
+                <div class="grid grid-cols-2 gap-2.5">
+                    <button type="button" id="btn-capture-grade" onclick="triggerManualScan()"
+                        class="col-span-2 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-[0.99] text-white font-bold text-sm shadow-lg shadow-emerald-600/20 flex items-center justify-center gap-2 transition cursor-pointer">
+                        <i data-lucide="scan" class="w-5 h-5"></i>
+                        <span>Jepret & Koreksi Sekarang</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Kolom Kanan: Hasil Koreksi Visual (Warped OMR Grid) & Simpan Sheets -->
+            <div class="lg:col-span-5 bg-slate-900 border border-slate-800 rounded-2xl p-3.5 flex flex-col justify-between gap-3 shadow-lg">
+                <div class="space-y-3">
+                    <div class="flex items-center justify-between border-b border-slate-800 pb-2.5">
+                        <div class="flex items-center gap-2">
+                            <i data-lucide="check-square" class="w-4 h-4 text-emerald-400"></i>
+                            <h2 class="font-bold text-sm text-white">Hasil Koreksi & Nilai</h2>
+                        </div>
+                        <span id="scan-confidence-badge" class="text-[11px] font-mono-omr px-2 py-0.5 rounded bg-slate-800 text-slate-400">
+                            Menunggu Scan
+                        </span>
+                    </div>
+
+                    <!-- Kartu Skor Utama -->
+                    <div class="bg-gradient-to-br from-slate-950 to-slate-900 border border-slate-800 rounded-xl p-3.5 flex items-center justify-between">
+                        <div>
+                            <div class="text-[11px] uppercase tracking-wider font-semibold text-slate-400">Nilai Akhir</div>
+                            <div id="result-score-big" class="text-4xl font-extrabold font-mono-omr text-emerald-400 leading-none mt-1">
+                                0.0
+                            </div>
+                        </div>
+                        <div class="flex gap-2 text-center">
+                            <div class="bg-emerald-500/10 border border-emerald-500/25 rounded-xl px-2.5 py-1.5 min-w-[54px]">
+                                <div id="count-benar" class="font-mono-omr font-bold text-base text-emerald-400">0</div>
+                                <div class="text-[10px] text-emerald-300/80 font-medium">Benar</div>
+                            </div>
+                            <div class="bg-rose-500/10 border border-rose-500/25 rounded-xl px-2.5 py-1.5 min-w-[54px]">
+                                <div id="count-salah" class="font-mono-omr font-bold text-base text-rose-400">0</div>
+                                <div class="text-[10px] text-rose-300/80 font-medium">Salah</div>
+                            </div>
+                            <div class="bg-slate-800/80 border border-slate-700 rounded-xl px-2.5 py-1.5 min-w-[54px]">
+                                <div id="count-kosong" class="font-mono-omr font-bold text-base text-slate-300">0</div>
+                                <div class="text-[10px] text-slate-400 font-medium">Kosong</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Form Identitas Siswa (Terisi Otomatis dari QR / Bubble NIS, Bisa Diedit) -->
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <label class="block text-[10px] font-semibold text-slate-400 mb-0.5">NIS / No. Peserta</label>
+                            <input type="text" id="res-nis" placeholder="Otomatis / Ketik NIS"
+                                class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-mono-omr font-bold text-white focus:border-emerald-500 outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-semibold text-slate-400 mb-0.5">Kelas</label>
+                            <input type="text" id="res-kelas" value="X-A"
+                                class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-white focus:border-emerald-500 outline-none">
+                        </div>
+                        <div class="col-span-2">
+                            <label class="block text-[10px] font-semibold text-slate-400 mb-0.5">Nama Siswa</label>
+                            <input type="text" id="res-nama" placeholder="Nama Siswa (Otomatis dari QR atau ketik manual)"
+                                class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-white focus:border-emerald-500 outline-none">
+                        </div>
+                    </div>
+
+                    <!-- Canvas Hasil Warp Lurus + Lingkaran Hijau/Merah -->
+                    <div class="space-y-1">
+                        <div class="flex items-center justify-between text-[11px] text-slate-400">
+                            <span>Visualisasi Grid OMR (Lurus):</span>
+                            <span class="flex items-center gap-2 text-[10px]">
+                                <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-emerald-500"></span>Benar</span>
+                                <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-rose-500"></span>Salah</span>
+                                <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full border border-amber-400"></span>Kunci</span>
+                            </span>
+                        </div>
+                        <div class="w-full h-44 bg-slate-950 border border-slate-800 rounded-xl overflow-hidden flex items-center justify-center">
+                            <canvas id="canvas-warped" class="max-w-full max-h-full object-contain"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tombol Kirim ke Google Sheets -->
+                <button type="button" id="btn-save-sheets" onclick="sendToGoogleSheets()"
+                    class="w-full py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:scale-[0.99] text-white font-bold text-sm shadow-lg shadow-indigo-600/20 flex items-center justify-center gap-2 transition cursor-pointer">
+                    <i data-lucide="send" class="w-4 h-4"></i>
+                    <span>Simpan Nilai ke Google Sheets</span>
+                </button>
+            </div>
+        </section>
+
+        <!-- 3. RINCIAN JAWABAN PER NOMOR (Bisa diklik untuk koreksi manual) -->
+        <section class="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-lg">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                    <h3 class="font-bold text-sm text-white">Rincian Jawaban Per Nomor</h3>
+                    <p class="text-[11px] text-slate-400">Ketuk nomor soal jika ingin mengubah pembacaan secara manual</p>
+                </div>
+                <span class="text-[11px] font-mono-omr text-slate-400 bg-slate-950 px-2.5 py-1 rounded-lg border border-slate-800">
+                    Format Sheets: A (✓) / C (✗:B)
+                </span>
+            </div>
+
+            <div id="answer-detail-grid" class="grid grid-cols-5 sm:grid-cols-7 md:grid-cols-10 gap-1.5">
+                <!-- Item nomor soal akan dirender oleh JS -->
+            </div>
+        </section>
+
+        <!-- 4. RIWAYAT SCAN SESI INI -->
+        <section class="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-lg">
+            <div class="flex items-center justify-between">
+                <h3 class="font-bold text-sm text-white flex items-center gap-2">
+                    <i data-lucide="history" class="w-4 h-4 text-emerald-400"></i>
+                    <span>Riwayat Terkirim ke Google Sheets</span>
+                </h3>
+                <span id="history-count-badge" class="text-[11px] font-mono-omr px-2 py-0.5 rounded bg-slate-800 text-slate-300">
+                    0 Data
+                </span>
+            </div>
+            <div id="scan-history-list" class="space-y-2 text-xs text-slate-400">
+                <p class="text-center py-3 text-slate-500">Belum ada data nilai yang dikirim pada sesi ini.</p>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Hidden Canvas untuk pemrosesan penuh -->
+    <canvas id="canvas-process" class="hidden"></canvas>
+
+    <script>
+        // URL Google Apps Script Permanen milik pengguna
+        const DEFAULT_SCRIPT_URL = "https://script.google.com/macros/s/AKfycby0Ktju78R5J04TykZq06Qg4iw5RVU0RM4ZWkH9sVcNWX8S0Vo7LuGGsf76zmatvuWBbg/exec";
+
+        // State Aplikasi
+        let cvReady = false;
+        let videoStream = null;
+        let isCameraRunning = false;
+        let animFrameId = null;
+        let autoScanCooldown = false;
+
+        // State Hasil Scan Terakhir
+        let lastScanResult = {
+            totalSoal: 35,
+            opsiCount: 5,
+            detectedAnswers: [], // array huruf ['A', 'C', '', ...]
+            formattedAnswers: [], // array format Sheets ['A (✓)', 'C (✗:B)', ...]
+            benar: 0,
+            salah: 0,
+            kosong: 0,
+            skor: 0
+        };
+
+        let sessionHistory = [];
+
+        // Inisialisasi saat halaman dimuat
+        window.addEventListener('DOMContentLoaded', () => {
+            lucide.createIcons();
+            loadSavedConfig();
+            renderEmptyAnswerGrid();
+        });
+
+        // Callback OpenCV.js Siap
+        function onOpenCvReady() {
+            cvReady = true;
+            const badge = document.getElementById('badge-opencv');
+            badge.className = "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30";
+            badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span><span>OpenCV Aktif</span>`;
+            showToast("Mesin Computer Vision (OpenCV) siap digunakan!", "success");
+        }
+
+        function onOpenCvError() {
+            const badge = document.getElementById('badge-opencv');
+            badge.className = "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-rose-500/15 text-rose-300 border border-rose-500/30";
+            badge.innerHTML = `<span>OpenCV Gagal Muat</span>`;
+            showToast("Gagal memuat OpenCV.js. Periksa koneksi internet.", "error");
+        }
+
+        // Toast Notification (Pengganti alert)
+        let toastTimer = null;
+        function showToast(message, type = "info") {
+            const container = document.getElementById('toast-container');
+            const textEl = document.getElementById('toast-text');
+            const iconEl = document.getElementById('toast-icon');
+
+            textEl.textContent = message;
+            if (type === "success") {
+                iconEl.innerHTML = `<i data-lucide="check-circle-2" class="w-5 h-5 text-emerald-400"></i>`;
+            } else if (type === "error") {
+                iconEl.innerHTML = `<i data-lucide="alert-circle" class="w-5 h-5 text-rose-400"></i>`;
+            } else {
+                iconEl.innerHTML = `<i data-lucide="info" class="w-5 h-5 text-sky-400"></i>`;
+            }
+            lucide.createIcons();
+
+            container.classList.remove('opacity-0', 'translate-y-6');
+            container.classList.add('opacity-100', 'translate-y-0');
+
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => {
+                container.classList.remove('opacity-100', 'translate-y-0');
+                container.classList.add('opacity-0', 'translate-y-6');
+            }, 3400);
+        }
+
+        // Toggle Panel Konfigurasi
+        function toggleConfigPanel() {
+            const body = document.getElementById('config-panel-body');
+            const chevron = document.getElementById('config-chevron');
+            body.classList.toggle('hidden');
+            chevron.classList.toggle('rotate-180');
+        }
+
+        // Simpan & Muat Konfigurasi dari localStorage
+        function saveConfig() {
+            const urlInput = document.getElementById('cfg-script-url');
+            if (!urlInput.value.trim()) {
+                urlInput.value = DEFAULT_SCRIPT_URL;
+            }
+            const config = {
+                scriptUrl: urlInput.value.trim(),
+                mapel: document.getElementById('cfg-mapel').value.trim(),
+                kelas: document.getElementById('cfg-kelas').value.trim(),
+                totalSoal: parseInt(document.getElementById('cfg-total-soal').value, 10) || 35,
+                opsi: parseInt(document.getElementById('cfg-opsi').value, 10) || 5,
+                kunci: document.getElementById('cfg-kunci').value.toUpperCase().replace(/[^A-E]/g, ''),
+                threshold: parseFloat(document.getElementById('cfg-threshold').value) || 0.42,
+                maxScore: parseFloat(document.getElementById('cfg-max-score').value) || 100
+            };
+            localStorage.setItem('omr_scanner_config_v1', JSON.stringify(config));
+            document.getElementById('res-kelas').value = config.kelas;
+            updateConfigSummary();
+        }
+
+        function loadSavedConfig() {
+            try {
+                const raw = localStorage.getItem('omr_scanner_config_v1');
+                if (raw) {
+                    const cfg = JSON.parse(raw);
+                    document.getElementById('cfg-script-url').value = cfg.scriptUrl || DEFAULT_SCRIPT_URL;
+                    document.getElementById('cfg-mapel').value = cfg.mapel || 'Informatika';
+                    document.getElementById('cfg-kelas').value = cfg.kelas || 'X-A';
+                    document.getElementById('res-kelas').value = cfg.kelas || 'X-A';
+                    document.getElementById('cfg-total-soal').value = cfg.totalSoal || 35;
+                    document.getElementById('cfg-opsi').value = cfg.opsi || 5;
+                    document.getElementById('cfg-kunci').value = cfg.kunci || 'ABCDEABCDEABCDEABCDEABCDEABCDEABCDE';
+                    document.getElementById('cfg-threshold').value = cfg.threshold || 0.42;
+                    document.getElementById('cfg-max-score').value = cfg.maxScore || 100;
+                } else {
+                    document.getElementById('cfg-script-url').value = DEFAULT_SCRIPT_URL;
+                }
+            } catch (e) {
+                document.getElementById('cfg-script-url').value = DEFAULT_SCRIPT_URL;
+            }
+            onThresholdChange(false);
+            updateConfigSummary();
+        }
+
+        function updateConfigSummary() {
+            const totalSoal = parseInt(document.getElementById('cfg-total-soal').value, 10) || 35;
+            const opsi = parseInt(document.getElementById('cfg-opsi').value, 10) || 5;
+            const kunci = document.getElementById('cfg-kunci').value.toUpperCase().replace(/[^A-E]/g, '');
+
+            const badge = document.getElementById('key-counter-badge');
+            badge.textContent = `${kunci.length} / ${totalSoal} Huruf`;
+            if (kunci.length === totalSoal) {
+                badge.className = "font-mono-omr text-[11px] font-bold px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30";
+            } else {
+                badge.className = "font-mono-omr text-[11px] font-bold px-2 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30";
+            }
+
+            document.getElementById('config-summary-text').textContent =
+                `${totalSoal} Soal • ${opsi} Opsi (${opsi === 4 ? 'A-D' : 'A-E'}) • Kunci: ${kunci.length}/${totalSoal}`;
+        }
+
+        function onQuestionCountChange() {
+            let val = parseInt(document.getElementById('cfg-total-soal').value, 10);
+            if (isNaN(val)) return;
+            if (val > 60) {
+                val = 60;
+                document.getElementById('cfg-total-soal').value = 60;
+            }
+            saveConfig();
+            renderEmptyAnswerGrid();
+        }
+
+        function onOptionCountChange() {
+            saveConfig();
+            if (lastScanResult.detectedAnswers.length > 0) {
+                recalculateGrade();
+            }
+        }
+
+        function onAnswerKeyInput() {
+            const el = document.getElementById('cfg-kunci');
+            const opsi = parseInt(document.getElementById('cfg-opsi').value, 10) || 5;
+            const regex = opsi === 4 ? /[^A-D]/g : /[^A-E]/g;
+            el.value = el.value.toUpperCase().replace(regex, '');
+            saveConfig();
+            if (lastScanResult.detectedAnswers.length > 0) {
+                recalculateGrade();
+            }
+        }
+
+        function fillSampleKey() {
+            const totalSoal = parseInt(document.getElementById('cfg-total-soal').value, 10) || 35;
+            const opsi = parseInt(document.getElementById('cfg-opsi').value, 10) || 5;
+            const letters = opsi === 4 ? ['A', 'B', 'C', 'D'] : ['A', 'B', 'C', 'D', 'E'];
+            let res = '';
+            for (let i = 0; i < totalSoal; i++) {
+                res += letters[i % letters.length];
+            }
+            document.getElementById('cfg-kunci').value = res;
+            saveConfig();
+            if (lastScanResult.detectedAnswers.length > 0) {
+                recalculateGrade();
+            }
+            showToast(`Contoh kunci ${totalSoal} soal berhasil diisi`, "success");
+        }
+
+        function onThresholdChange(doSave = true) {
+            const val = parseFloat(document.getElementById('cfg-threshold').value);
+            let desc = "Normal";
+            if (val < 0.35) desc = "Sangat Sensitif (Pensil Tipis)";
+            else if (val > 0.50) desc = "Ketat (Bolpoin Pekat)";
+            document.getElementById('threshold-val-label').textContent = `${val.toFixed(2)} (${desc})`;
+            if (doSave) saveConfig();
+        }
+
+        // Tes Koneksi GET ke Google Apps Script
+        async function testApiConnection() {
+            const url = document.getElementById('cfg-script-url').value.trim() || DEFAULT_SCRIPT_URL;
+            const pill = document.getElementById('api-status-pill');
+            pill.textContent = "Mengecek...";
+            pill.className = "text-[10px] font-mono-omr px-2 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30";
+
+            try {
+                const response = await fetch(url, { method: "GET" });
+                const json = await response.json();
+                if (json && json.status === "online") {
+                    pill.textContent = "Online ✓";
+                    pill.className = "text-[10px] font-mono-omr px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30";
+                    showToast("Koneksi ke Google Sheets API Berhasil (Online)!", "success");
+                } else {
+                    throw new Error("Respons tidak valid");
+                }
+            } catch (err) {
+                pill.textContent = "Siap POST";
+                pill.className = "text-[10px] font-mono-omr px-2 py-0.5 rounded bg-sky-500/15 text-sky-300 border border-sky-500/30";
+                showToast("Endpoint terpasang. Siap mengirim data nilai via POST.", "info");
+            }
+        }
+
+        // ==========================================
+        // KAMERA LIVE & UPLOAD GAMBAR
+        // ==========================================
+        async function startCamera() {
+            if (!cvReady) {
+                showToast("Tunggu sebentar, mesin OpenCV masih dimuat...", "info");
+                return;
+            }
+            try {
+                if (videoStream) {
+                    videoStream.getTracks().forEach(t => t.stop());
+                }
+                videoStream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: { ideal: "environment" },
+                        width: { ideal: 1280 },
+                        height: { ideal: 960 }
+                    },
+                    audio: false
+                });
+
+                const video = document.getElementById('video-feed');
+                video.srcObject = videoStream;
+                await video.play();
+
+                isCameraRunning = true;
+                document.getElementById('viewport-placeholder').classList.add('hidden');
+                document.getElementById('scanner-laser-line').classList.remove('hidden');
+                document.getElementById('marker-lock-badge').classList.remove('hidden');
+
+                requestAnimationFrame(processVideoLoop);
+                showToast("Kamera aktif. Arahkan ke 4 kotak hitam sudut LJK.", "success");
+            } catch (err) {
+                showToast("Tidak dapat mengakses kamera. Gunakan tombol Upload / Foto LJK.", "error");
+            }
+        }
+
+        function processVideoLoop() {
+            if (!isCameraRunning) return;
+            const video = document.getElementById('video-feed');
+            const overlay = document.getElementById('canvas-overlay');
+            const procCanvas = document.getElementById('canvas-process');
+
+            if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                overlay.width = video.videoWidth;
+                overlay.height = video.videoHeight;
+                procCanvas.width = video.videoWidth;
+                procCanvas.height = video.videoHeight;
+
+                const ctxOverlay = overlay.getContext('2d');
+                const ctxProc = procCanvas.getContext('2d');
+
+                ctxOverlay.drawImage(video, 0, 0, overlay.width, overlay.height);
+                ctxProc.drawImage(video, 0, 0, procCanvas.width, procCanvas.height);
+
+                // Deteksi real-time 4 fiducial markers
+                const corners = detectFourFiducialMarkers(procCanvas);
+                const dot = document.getElementById('marker-dot');
+                const statusText = document.getElementById('marker-status-text');
+
+                if (corners) {
+                    // Gambar bounding box hijau presisi di layar kamera
+                    ctxOverlay.strokeStyle = "#10b981";
+                    ctxOverlay.lineWidth = Math.max(4, overlay.width * 0.005);
+                    ctxOverlay.beginPath();
+                    ctxOverlay.moveTo(corners[0].x, corners[0].y);
+                    ctxOverlay.lineTo(corners[1].x, corners[1].y);
+                    ctxOverlay.lineTo(corners[2].x, corners[2].y);
+                    ctxOverlay.lineTo(corners[3].x, corners[3].y);
+                    ctxOverlay.closePath();
+                    ctxOverlay.stroke();
+
+                    // Titik sudut
+                    corners.forEach(pt => {
+                        ctxOverlay.fillStyle = "#34d399";
+                        ctxOverlay.beginPath();
+                        ctxOverlay.arc(pt.x, pt.y, 8, 0, Math.PI * 2);
+                        ctxOverlay.fill();
+                    });
+
+                    dot.className = "w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping";
+                    statusText.textContent = "4 Sudut Terkunci! Siap Scan";
+
+                    // Jika Auto-Scan aktif
+                    const isAuto = document.getElementById('toggle-autoscan').checked;
+                    if (isAuto && !autoScanCooldown) {
+                        autoScanCooldown = true;
+                        runFullOmrAnalysis(procCanvas, corners);
+                        setTimeout(() => { autoScanCooldown = false; }, 3500);
+                    }
+                } else {
+                    dot.className = "w-2 h-2 rounded-full bg-amber-400";
+                    statusText.textContent = "Mencari 4 Kotak Sudut...";
+                }
+            }
+
+            animFrameId = requestAnimationFrame(processVideoLoop);
+        }
+
+        // Upload / Foto LJK dari Galeri
+        function handleImageUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            if (!cvReady) {
+                showToast("Mesin OpenCV masih dimuat, tunggu beberapa detik...", "info");
+                return;
+            }
+
+            // Hentikan kamera live jika sedang menyala
+            if (isCameraRunning && videoStream) {
+                isCameraRunning = false;
+                videoStream.getTracks().forEach(t => t.stop());
+            }
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const img = new Image();
+                img.onload = function() {
+                    const overlay = document.getElementById('canvas-overlay');
+                    const procCanvas = document.getElementById('canvas-process');
+
+                    // Batasi resolusi maksimal 1600px agar pemrosesan cepat & tajam
+                    const maxDim = 1600;
+                    let w = img.width;
+                    let h = img.height;
+                    if (w > maxDim || h > maxDim) {
+                        const scale = maxDim / Math.max(w, h);
+                        w = Math.round(w * scale);
+                        h = Math.round(h * scale);
+                    }
+
+                    overlay.width = w;
+                    overlay.height = h;
+                    procCanvas.width = w;
+                    procCanvas.height = h;
+
+                    const ctxOverlay = overlay.getContext('2d');
+                    const ctxProc = procCanvas.getContext('2d');
+                    ctxOverlay.drawImage(img, 0, 0, w, h);
+                    ctxProc.drawImage(img, 0, 0, w, h);
+
+                    document.getElementById('viewport-placeholder').classList.add('hidden');
+                    document.getElementById('scanner-laser-line').classList.add('hidden');
+                    document.getElementById('marker-lock-badge').classList.remove('hidden');
+
+                    const corners = detectFourFiducialMarkers(procCanvas);
+                    if (corners) {
+                        ctxOverlay.strokeStyle = "#10b981";
+                        ctxOverlay.lineWidth = Math.max(4, w * 0.005);
+                        ctxOverlay.beginPath();
+                        ctxOverlay.moveTo(corners[0].x, corners[0].y);
+                        ctxOverlay.lineTo(corners[1].x, corners[1].y);
+                        ctxOverlay.lineTo(corners[2].x, corners[2].y);
+                        ctxOverlay.lineTo(corners[3].x, corners[3].y);
+                        ctxOverlay.closePath();
+                        ctxOverlay.stroke();
+
+                        document.getElementById('marker-dot').className = "w-2.5 h-2.5 rounded-full bg-emerald-400";
+                        document.getElementById('marker-status-text').textContent = "4 Kotak Sudut Terdeteksi";
+                        runFullOmrAnalysis(procCanvas, corners);
+                    } else {
+                        document.getElementById('marker-dot').className = "w-2.5 h-2.5 rounded-full bg-rose-400";
+                        document.getElementById('marker-status-text').textContent = "4 Kotak Sudut Tidak Ditemukan";
+                        showToast("4 kotak hitam sudut tidak terdeteksi jelas. Pastikan foto LJK tegak & terang.", "error");
+                    }
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+            event.target.value = '';
+        }
+
+        function triggerManualScan() {
+            if (!cvReady) {
+                showToast("Mesin OpenCV belum siap.", "error");
+                return;
+            }
+            const procCanvas = document.getElementById('canvas-process');
+            if (!procCanvas.width || !procCanvas.height) {
+                showToast("Buka kamera atau unggah foto LJK terlebih dahulu.", "info");
+                return;
+            }
+            const corners = detectFourFiducialMarkers(procCanvas);
+            if (!corners) {
+                showToast("4 kotak hitam sudut LJK belum terkunci. Sesuaikan posisi kamera.", "error");
+                return;
+            }
+            runFullOmrAnalysis(procCanvas, corners);
+        }
+
+        // ==========================================
+        // MESIN COMPUTER VISION (OpenCV.js + jsQR)
+        // ==========================================
+        function detectFourFiducialMarkers(sourceCanvas) {
+            let src = null, gray = null, blurred = null, thresh = null, contours = null, hierarchy = null;
+            try {
+                src = cv.imread(sourceCanvas);
+                gray = new cv.Mat();
+                blurred = new cv.Mat();
+                thresh = new cv.Mat();
+
+                cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+                cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0);
+                cv.adaptiveThreshold(blurred, thresh, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 25, 10);
+
+                contours = new cv.MatVector();
+                hierarchy = new cv.Mat();
+                cv.findContours(thresh, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+                const imgArea = src.rows * src.cols;
+                const minMarkerArea = imgArea * 0.00035;
+                const maxMarkerArea = imgArea * 0.025;
+                const candidates = [];
+
+                for (let i = 0; i < contours.size(); i++) {
+                    const cnt = contours.get(i);
+                    const area = cv.contourArea(cnt);
+                    if (area < minMarkerArea || area > maxMarkerArea) {
+                        cnt.delete();
+                        continue;
+                    }
+
+                    const rect = cv.boundingRect(cnt);
+                    const aspectRatio = rect.width / rect.height;
+                    const rectArea = rect.width * rect.height;
+                    const extent = area / rectArea; // Kotak hitam pekat memiliki extent mendekati 1.0
+
+                    // Fiducial marker berbentuk persegi (8mm x 8mm) dan solid hitam
+                    if (aspectRatio >= 0.72 && aspectRatio <= 1.38 && extent >= 0.72) {
+                        const approx = new cv.Mat();
+                        const peri = cv.arcLength(cnt, true);
+                        cv.approxPolyDP(cnt, approx, 0.04 * peri, true);
+                        if (approx.rows >= 4 && approx.rows <= 6) {
+                            candidates.push({
+                                x: rect.x + rect.width / 2,
+                                y: rect.y + rect.height / 2,
+                                area: area
+                            });
+                        }
+                        approx.delete();
+                    }
+                    cnt.delete();
+                }
+
+                if (candidates.length < 4) return null;
+
+                // Pilih 4 kandidat paling ekstrem di keempat kuadran (Top-Left, Top-Right, Bottom-Right, Bottom-Left)
+                const cx = src.cols / 2;
+                const cy = src.rows / 2;
+
+                // Cari kandidat terdekat ke masing-masing pojok gambar dari area bawah-tengah kertas
+                let tl = null, tr = null, br = null, bl = null;
+                let minTl = Infinity, maxTr = -Infinity, maxBr = -Infinity, minBl = Infinity;
+
+                candidates.forEach(p => {
+                    // Top-Left area OMR (biasanya di sekitar y > 25% tinggi kertas)
+                    const sum = p.x + p.y;
+                    const diff = p.x - p.y;
+
+                    if (sum < minTl) { minTl = sum; tl = p; }
+                    if (diff > maxTr) { maxTr = diff; tr = p; }
+                    if (sum > maxBr) { maxBr = sum; br = p; }
+                    if (diff < minBl) { minBl = diff; bl = p; }
+                });
+
+                // Pastikan 4 titik berbeda dan membentuk area yang wajar
+                const uniqueSet = new Set([tl, tr, br, bl]);
+                if (uniqueSet.size < 4) return null;
+
+                const widthTop = Math.hypot(tr.x - tl.x, tr.y - tl.y);
+                const heightLeft = Math.hypot(bl.x - tl.x, bl.y - tl.y);
+                if (widthTop < src.cols * 0.25 || heightLeft < src.rows * 0.20) return null;
+
+                return [tl, tr, br, bl];
+            } catch (e) {
+                return null;
+            } finally {
+                if (src) src.delete();
+                if (gray) gray.delete();
+                if (blurred) blurred.delete();
+                if (thresh) thresh.delete();
+                if (contours) contours.delete();
+                if (hierarchy) hierarchy.delete();
+            }
+        }
+
+        function runFullOmrAnalysis(sourceCanvas, corners) {
+            const totalSoal = parseInt(document.getElementById('cfg-total-soal').value, 10) || 35;
+            const opsiCount = parseInt(document.getElementById('cfg-opsi').value, 10) || 5;
+            const thresholdRatio = parseFloat(document.getElementById('cfg-threshold').value) || 0.42;
+            const options = opsiCount === 4 ? ['A', 'B', 'C', 'D'] : ['A', 'B', 'C', 'D', 'E'];
+
+            // 1. Coba baca QR Code Identitas Siswa di bagian atas gambar
+            scanStudentQrCode(sourceCanvas);
+
+            // 2. Perspective Transform area OMR (4 Fiducial Markers -> kanvas lurus 900 x 1050)
+            const warpW = 900;
+            const warpH = 1050;
+            let src = null, dst = null, srcTri = null, dstTri = null, M = null, gray = null, bin = null;
+
+            try {
+                src = cv.imread(sourceCanvas);
+                dst = new cv.Mat();
+
+                srcTri = cv.matFromArray(4, 1, cv.CV_32FC2, [
+                    corners[0].x, corners[0].y,
+                    corners[1].x, corners[1].y,
+                    corners[2].x, corners[2].y,
+                    corners[3].x, corners[3].y
+                ]);
+                dstTri = cv.matFromArray(4, 1, cv.CV_32FC2, [
+                    0, 0,
+                    warpW, 0,
+                    warpW, warpH,
+                    0, warpH
+                ]);
+
+                M = cv.getPerspectiveTransform(srcTri, dstTri);
+                cv.warpPerspective(src, dst, M, new cv.Size(warpW, warpH));
+
+                // Binarisasi untuk menghitung kepadatan piksel hitam di tiap bulatan
+                gray = new cv.Mat();
+                bin = new cv.Mat();
+                cv.cvtColor(dst, gray, cv.COLOR_RGBA2GRAY);
+                cv.GaussianBlur(gray, gray, new cv.Size(3, 3), 0);
+                cv.adaptiveThreshold(gray, bin, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 25, 12);
+
+                // Tampilkan gambar hasil warp lurus ke canvas pratinjau
+                const warpedCanvas = document.getElementById('canvas-warped');
+                warpedCanvas.width = warpW;
+                warpedCanvas.height = warpH;
+                cv.imshow(warpedCanvas, dst);
+                const ctxVisual = warpedCanvas.getContext('2d');
+
+                // 3. Pemetaan Koordinat Grid Proporsional sesuai Generator LJK A4
+                let numCols = 3;
+                if (totalSoal <= 15) numCols = 1;
+                else if (totalSoal <= 32) numCols = 2;
+
+                const rowsPerCol = Math.ceil(totalSoal / numCols);
+                const kunciStr = document.getElementById('cfg-kunci').value.toUpperCase();
+
+                // Margin dalam area fiducial markers (sesuai padding 5.5mm + header kolom di generator)
+                const gridLeft = warpW * 0.045;
+                const gridRight = warpW * 0.955;
+                const gridTop = warpH * 0.095;
+                const gridBottom = warpH * 0.955;
+
+                const totalGridW = gridRight - gridLeft;
+                const totalGridH = gridBottom - gridTop;
+                const colGap = warpW * 0.022;
+                const colW = (totalGridW - colGap * (numCols - 1)) / numCols;
+                const rowH = totalGridH / rowsPerCol;
+
+                const detectedAnswers = new Array(totalSoal).fill('');
+                let totalConfidence = 0;
+
+                for (let c = 0; c < numCols; c++) {
+                    const colStartX = gridLeft + c * (colW + colGap);
+                    // Area bulatan berada di 30% sampai 94% lebar masing-masing kolom (setelah nomor soal)
+                    const bubblesStartX = colStartX + colW * 0.31;
+                    const bubblesEndX = colStartX + colW * 0.93;
+                    const bubbleStepX = (bubblesEndX - bubblesStartX) / Math.max(1, opsiCount - 1);
+                    const sampleRadius = Math.max(8, Math.min(rowH * 0.28, bubbleStepX * 0.34));
+
+                    for (let r = 0; r < rowsPerCol; r++) {
+                        const qIndex = c * rowsPerCol + r;
+                        if (qIndex >= totalSoal) break;
+
+                        const centerY = gridTop + (r + 0.5) * rowH;
+                        let bestOptionIdx = -1;
+                        let maxFillRatio = 0;
+                        let secondFillRatio = 0;
+                        const bubbleCoords = [];
+
+                        for (let o = 0; o < opsiCount; o++) {
+                            const centerX = bubblesStartX + o * bubbleStepX;
+                            bubbleCoords.push({ x: centerX, y: centerY });
+
+                            // Hitung rasio piksel putih (arsiran hitam yang di-invert) dalam ROI lingkaran
+                            const x0 = Math.max(0, Math.round(centerX - sampleRadius));
+                            const y0 = Math.max(0, Math.round(centerY - sampleRadius));
+                            const wRoi = Math.min(bin.cols - x0, Math.round(sampleRadius * 2));
+                            const hRoi = Math.min(bin.rows - y0, Math.round(sampleRadius * 2));
+
+                            if (wRoi > 0 && hRoi > 0) {
+                                const roi = bin.roi(new cv.Rect(x0, y0, wRoi, hRoi));
+                                const nonZero = cv.countNonZero(roi);
+                                roi.delete();
+
+                                const fillRatio = nonZero / (wRoi * hRoi);
+                                if (fillRatio > maxFillRatio) {
+                                    secondFillRatio = maxFillRatio;
+                                    maxFillRatio = fillRatio;
+                                    bestOptionIdx = o;
+                                } else if (fillRatio > secondFillRatio) {
+                                    secondFillRatio = fillRatio;
+                                }
+                            }
+                        }
+
+                        // Tentukan jawaban terpilih jika melebihi threshold sensitivitas
+                        let chosenLetter = '';
+                        if (maxFillRatio >= thresholdRatio && (maxFillRatio - secondFillRatio) >= 0.08) {
+                            chosenLetter = options[bestOptionIdx];
+                            totalConfidence += Math.min(100, Math.round((maxFillRatio / 0.75) * 100));
+                        } else {
+                            totalConfidence += 85;
+                        }
+
+                        detectedAnswers[qIndex] = chosenLetter;
+
+                        // Gambar Visual Overlay (Hijau = Benar, Merah = Salah, Kuning = Kunci)
+                        const keyLetter = kunciStr[qIndex] || '';
+                        const keyIdx = options.indexOf(keyLetter);
+
+                        if (chosenLetter) {
+                            const chosenCoord = bubbleCoords[options.indexOf(chosenLetter)];
+                            const isCorrect = (keyLetter && chosenLetter === keyLetter);
+                            ctxVisual.strokeStyle = isCorrect ? "#10b981" : "#f43f5e";
+                            ctxVisual.fillStyle = isCorrect ? "rgba(16, 185, 129, 0.35)" : "rgba(244, 63, 94, 0.35)";
+                            ctxVisual.lineWidth = 4;
+                            ctxVisual.beginPath();
+                            ctxVisual.arc(chosenCoord.x, chosenCoord.y, sampleRadius * 1.25, 0, Math.PI * 2);
+                            ctxVisual.fill();
+                            ctxVisual.stroke();
+                        }
+
+                        // Jika jawaban salah/kosong, beri lingkaran kuning di kunci yang benar
+                        if (keyIdx >= 0 && chosenLetter !== keyLetter) {
+                            const keyCoord = bubbleCoords[keyIdx];
+                            ctxVisual.strokeStyle = "#fbbf24";
+                            ctxVisual.lineWidth = 3.5;
+                            ctxVisual.beginPath();
+                            ctxVisual.arc(keyCoord.x, keyCoord.y, sampleRadius * 1.2, 0, Math.PI * 2);
+                            ctxVisual.stroke();
+                        }
+                    }
+                }
+
+                lastScanResult.totalSoal = totalSoal;
+                lastScanResult.opsiCount = opsiCount;
+                lastScanResult.detectedAnswers = detectedAnswers;
+
+                const avgConf = Math.min(99, Math.round(totalConfidence / totalSoal));
+                const confBadge = document.getElementById('scan-confidence-badge');
+                confBadge.textContent = `Akurasi Baca: ${avgConf}%`;
+                confBadge.className = "text-[11px] font-mono-omr px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30";
+
+                recalculateGrade();
+                showToast("LJK berhasil dipindai dan dikoreksi!", "success");
+
+            } catch (err) {
+                console.error(err);
+                showToast("Terjadi kendala saat memproses grid OMR.", "error");
+            } finally {
+                if (src) src.delete();
+                if (dst) dst.delete();
+                if (srcTri) srcTri.delete();
+                if (dstTri) dstTri.delete();
+                if (M) M.delete();
+                if (gray) gray.delete();
+                if (bin) bin.delete();
+            }
+        }
+
+        // Pembaca QR Code Identitas Siswa di Kop LJK (jsQR)
+        function scanStudentQrCode(sourceCanvas) {
+            if (typeof jsQR === 'undefined') return;
+            try {
+                const ctx = sourceCanvas.getContext('2d');
+                // Fokuskan pencarian QR pada 45% bagian atas kertas (area identitas)
+                const scanH = Math.round(sourceCanvas.height * 0.45);
+                const imgData = ctx.getImageData(0, 0, sourceCanvas.width, scanH);
+                const code = jsQR(imgData.data, imgData.width, imgData.height, {
+                    inversionAttempts: "dontInvert"
+                });
+
+                if (code && code.data) {
+                    const raw = code.data.trim();
+                    // Dukung format JSON dari generator LJK maupun format NIS|Nama|Kelas
+                    if (raw.startsWith('{')) {
+                        const parsed = JSON.parse(raw);
+                        if (parsed.n) document.getElementById('res-nis').value = parsed.n;
+                        if (parsed.s) document.getElementById('res-nama').value = parsed.s;
+                        if (parsed.k) document.getElementById('res-kelas').value = parsed.k;
+                    } else if (raw.includes('|')) {
+                        const parts = raw.split('|');
+                        if (parts[0]) document.getElementById('res-nis').value = parts[0].trim();
+                        if (parts[1]) document.getElementById('res-nama').value = parts[1].trim();
+                        if (parts[2]) document.getElementById('res-kelas').value = parts[2].trim();
+                    } else {
+                        document.getElementById('res-nis').value = raw;
+                    }
+                    showToast("QR Code Siswa terbaca otomatis!", "success");
+                }
+            } catch (e) {
+                // Abaikan jika QR tidak ada
+            }
+        }
+
+        // Hitung Ulang Nilai & Format Array Jawaban ("A (✓)" / "C (✗:B)")
+        function recalculateGrade() {
+            const totalSoal = parseInt(document.getElementById('cfg-total-soal').value, 10) || 35;
+            const kunciStr = document.getElementById('cfg-kunci').value.toUpperCase();
+            const maxScore = parseFloat(document.getElementById('cfg-max-score').value) || 100;
+
+            let benar = 0;
+            let salah = 0;
+            let kosong = 0;
+            const formattedAnswers = [];
+
+            for (let i = 0; i < totalSoal; i++) {
+                const ans = lastScanResult.detectedAnswers[i] || '';
+                const key = kunciStr[i] || '';
+
+                if (!ans) {
+                    kosong++;
+                    formattedAnswers.push(key ? `- (✗:${key})` : `-`);
+                } else if (key && ans === key) {
+                    benar++;
+                    formattedAnswers.push(`${ans} (✓)`);
+                } else {
+                    salah++;
+                    formattedAnswers.push(key ? `${ans} (✗:${key})` : `${ans}`);
+                }
+            }
+
+            const skor = totalSoal > 0 ? Number(((benar / totalSoal) * maxScore).toFixed(1)) : 0;
+
+            lastScanResult.totalSoal = totalSoal;
+            lastScanResult.benar = benar;
+            lastScanResult.salah = salah;
+            lastScanResult.kosong = kosong;
+            lastScanResult.skor = skor;
+            lastScanResult.formattedAnswers = formattedAnswers;
+
+            // Update UI Skor
+            document.getElementById('result-score-big').textContent = skor.toFixed(1);
+            document.getElementById('count-benar').textContent = benar;
+            document.getElementById('count-salah').textContent = salah;
+            document.getElementById('count-kosong').textContent = kosong;
+
+            renderAnswerDetailGrid();
+        }
+
+        // Render Grid Rincian Nomor Soal (Interaktif untuk Koreksi Manual)
+        function renderEmptyAnswerGrid() {
+            const totalSoal = parseInt(document.getElementById('cfg-total-soal').value, 10) || 35;
+            lastScanResult.detectedAnswers = new Array(totalSoal).fill('');
+            recalculateGrade();
+        }
+
+        function renderAnswerDetailGrid() {
+            const container = document.getElementById('answer-detail-grid');
+            const totalSoal = parseInt(document.getElementById('cfg-total-soal').value, 10) || 35;
+            const kunciStr = document.getElementById('cfg-kunci').value.toUpperCase();
+            let html = '';
+
+            for (let i = 0; i < totalSoal; i++) {
+                const ans = lastScanResult.detectedAnswers[i] || '-';
+                const key = kunciStr[i] || '?';
+                const isCorrect = ans !== '-' && ans === key;
+                const isBlank = ans === '-';
+
+                let cardStyle = "bg-slate-950 border-slate-800 text-slate-400";
+                if (!isBlank && isCorrect) {
+                    cardStyle = "bg-emerald-500/15 border-emerald-500/40 text-emerald-300";
+                } else if (!isBlank && !isCorrect) {
+                    cardStyle = "bg-rose-500/15 border-rose-500/40 text-rose-300";
+                }
+
+                html += `
+                    <button type="button" onclick="cycleManualAnswer(${i})"
+                        class="p-1.5 rounded-xl border ${cardStyle} flex flex-col items-center justify-center hover:brightness-110 active:scale-95 transition cursor-pointer"
+                        title="Klik untuk ubah jawaban No. ${i + 1}">
+                        <span class="text-[10px] font-mono-omr opacity-70">${i + 1}</span>
+                        <span class="text-xs font-mono-omr font-extrabold">${ans}</span>
+                        <span class="text-[9px] font-mono-omr opacity-60">K:${key}</span>
+                    </button>
+                `;
+            }
+            container.innerHTML = html;
+        }
+
+        // Ubah jawaban secara manual jika ada bulatan terhapus kurang bersih
+        function cycleManualAnswer(index) {
+            const opsiCount = parseInt(document.getElementById('cfg-opsi').value, 10) || 5;
+            const cycle = opsiCount === 4 ? ['', 'A', 'B', 'C', 'D'] : ['', 'A', 'B', 'C', 'D', 'E'];
+            const current = lastScanResult.detectedAnswers[index] || '';
+            const nextIdx = (cycle.indexOf(current) + 1) % cycle.length;
+            lastScanResult.detectedAnswers[index] = cycle[nextIdx];
+            recalculateGrade();
+        }
+
+        // ==========================================
+        // KIRIM DATA KE GOOGLE SHEETS (Apps Script)
+        // ==========================================
+        async function sendToGoogleSheets() {
+            const scriptUrl = document.getElementById('cfg-script-url').value.trim() || DEFAULT_SCRIPT_URL;
+            const nis = document.getElementById('res-nis').value.trim() || "-";
+            const nama = document.getElementById('res-nama').value.trim() || "Siswa Tanpa Nama";
+            const kelas = document.getElementById('res-kelas').value.trim() || document.getElementById('cfg-kelas').value.trim() || "-";
+            const mapel = document.getElementById('cfg-mapel').value.trim() || "Ujian Umum";
+
+            const btn = document.getElementById('btn-save-sheets');
+            const originalHtml = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i><span>Mengirim ke Sheets...</span>`;
+            lucide.createIcons();
+
+            const payload = {
+                nis: nis,
+                nama: nama,
+                kelas: kelas,
+                mapel: mapel,
+                totalSoal: lastScanResult.totalSoal,
+                skor: lastScanResult.skor,
+                benar: lastScanResult.benar,
+                salah: lastScanResult.salah,
+                kosong: lastScanResult.kosong,
+                jawaban: lastScanResult.formattedAnswers
+            };
+
+            try {
+                await fetch(scriptUrl, {
+                    method: "POST",
+                    mode: "no-cors",
+                    headers: { "Content-Type": "text/plain;charset=utf-8" },
+                    body: JSON.stringify(payload)
+                });
+
+                showToast(`Nilai ${nama} (${lastScanResult.skor}) berhasil dikirim ke Google Sheets!`, "success");
+                addHistoryEntry(payload);
+
+                // Bersihkan input identitas untuk scan siswa berikutnya
+                document.getElementById('res-nis').value = '';
+                document.getElementById('res-nama').value = '';
+            } catch (err) {
+                showToast("Gagal mengirim data. Periksa koneksi internet Anda.", "error");
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = originalHtml;
+                lucide.createIcons();
+            }
+        }
+
+        function addHistoryEntry(payload) {
+            const now = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            sessionHistory.unshift({ ...payload, time: now });
+
+            document.getElementById('history-count-badge').textContent = `${sessionHistory.length} Data`;
+            const listEl = document.getElementById('scan-history-list');
+
+            listEl.innerHTML = sessionHistory.map(item => `
+                <div class="bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2.5 flex items-center justify-between gap-2">
+                    <div class="min-w-0">
+                        <div class="font-bold text-white truncate">${item.nama} <span class="font-mono-omr text-slate-400 font-normal">(${item.nis})</span></div>
+                        <div class="text-[11px] text-slate-400">${item.kelas} • ${item.mapel} • B:${item.benar} S:${item.salah} K:${item.kosong}</div>
+                    </div>
+                    <div class="text-right shrink-0">
+                        <div class="font-mono-omr font-extrabold text-sm text-emerald-400">${item.skor}</div>
+                        <div class="text-[10px] text-slate-500">${item.time} ✓</div>
+                    </div>
+                </div>
+            `).join('');
+        }
+    </script>
+</body>
+</html>
